@@ -1,11 +1,25 @@
-// Google Apps Script - Digital Vault Manager Backend
+// ============================================
+// DIGITAL VAULT MANAGER - Google Apps Script
 // Author: Sachin Meena
-// Description: Complete backend for Personal & Business Digital Vault Manager
+// ============================================
 
-const SHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+// Get the active spreadsheet
 const SPREADSHEET = SpreadsheetApp.getActiveSpreadsheet();
 
-// Initialize or get sheets for different categories
+// ============================================
+// INITIALIZATION FUNCTIONS
+// ============================================
+
+function doGet() {
+  // Initialize sheets on first load
+  initializeSheets();
+  
+  // Return the HTML as web app
+  return HtmlService.createHtmlOutputFromFile('index')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
 function initializeSheets() {
   const sheetNames = ['Business Documents', 'Video Hub', 'Bookmarks', 'Quick Notes'];
   
@@ -17,7 +31,6 @@ function initializeSheets() {
   });
 }
 
-// Initialize headers for each sheet
 function initializeSheetHeaders(sheet) {
   const sheetName = sheet.getName();
   let headers = [];
@@ -32,156 +45,44 @@ function initializeSheetHeaders(sheet) {
     headers = ['ID', 'Title', 'Content', 'Category', 'Is Sensitive', 'Date Added', 'Timestamp'];
   }
   
-  sheet.appendRow(headers);
+  if (headers.length > 0) {
+    sheet.appendRow(headers);
+  }
 }
 
-// Render the web app
-function doGet() {
-  initializeSheets();
-  return HtmlService.createHtmlOutputFromFile('index')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
+// ============================================
+// READ OPERATIONS
+// ============================================
 
-// Get all data from a specific sheet
 function getSheetData(sheetName) {
   try {
     const sheet = SPREADSHEET.getSheetByName(sheetName);
     if (!sheet) {
+      Logger.log('Sheet not found: ' + sheetName);
       return [];
     }
     
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const rows = data.slice(1);
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return [];
+    }
     
-    return rows.map(row => {
+    const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    return data.map(row => {
       const obj = {};
       headers.forEach((header, index) => {
         obj[header] = row[index] || '';
       });
       return obj;
-    }).filter(row => row.ID !== '');
+    }).filter(row => row.ID !== '' && row.ID);
   } catch (error) {
     Logger.log('Error in getSheetData: ' + error);
     return [];
   }
 }
 
-// Add new entry
-function addEntry(sheetName, data) {
-  try {
-    const sheet = SPREADSHEET.getSheetByName(sheetName);
-    if (!sheet) {
-      return { success: false, message: 'Sheet not found' };
-    }
-    
-    const lastRow = sheet.getLastRow();
-    const id = Utilities.getUuid();
-    const timestamp = new Date();
-    
-    let newRow = [];
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    headers.forEach(header => {
-      if (header === 'ID') {
-        newRow.push(id);
-      } else if (header === 'Timestamp') {
-        newRow.push(timestamp);
-      } else {
-        newRow.push(data[header] || '');
-      }
-    });
-    
-    sheet.appendRow(newRow);
-    return { success: true, message: 'Entry added successfully', id: id };
-  } catch (error) {
-    Logger.log('Error in addEntry: ' + error);
-    return { success: false, message: 'Error adding entry: ' + error };
-  }
-}
-
-// Update entry
-function updateEntry(sheetName, id, data) {
-  try {
-    const sheet = SPREADSHEET.getSheetByName(sheetName);
-    if (!sheet) {
-      return { success: false, message: 'Sheet not found' };
-    }
-    
-    const dataRange = sheet.getDataRange();
-    const values = dataRange.getValues();
-    const headers = values[0];
-    
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === id) {
-        headers.forEach((header, index) => {
-          if (header === 'Timestamp') {
-            sheet.getRange(i + 1, index + 1).setValue(new Date());
-          } else if (data[header] !== undefined) {
-            sheet.getRange(i + 1, index + 1).setValue(data[header]);
-          }
-        });
-        return { success: true, message: 'Entry updated successfully' };
-      }
-    }
-    
-    return { success: false, message: 'Entry not found' };
-  } catch (error) {
-    Logger.log('Error in updateEntry: ' + error);
-    return { success: false, message: 'Error updating entry: ' + error };
-  }
-}
-
-// Delete entry
-function deleteEntry(sheetName, id) {
-  try {
-    const sheet = SPREADSHEET.getSheetByName(sheetName);
-    if (!sheet) {
-      return { success: false, message: 'Sheet not found' };
-    }
-    
-    const dataRange = sheet.getDataRange();
-    const values = dataRange.getValues();
-    
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === id) {
-        sheet.deleteRow(i + 1);
-        return { success: true, message: 'Entry deleted successfully' };
-      }
-    }
-    
-    return { success: false, message: 'Entry not found' };
-  } catch (error) {
-    Logger.log('Error in deleteEntry: ' + error);
-    return { success: false, message: 'Error deleting entry: ' + error };
-  }
-}
-
-// Search across all sheets
-function searchData(query) {
-  try {
-    const query_lower = query.toLowerCase();
-    const sheetNames = ['Business Documents', 'Video Hub', 'Bookmarks', 'Quick Notes'];
-    const results = {};
-    
-    sheetNames.forEach(sheetName => {
-      const data = getSheetData(sheetName);
-      results[sheetName] = data.filter(row => {
-        return Object.values(row).some(val => 
-          String(val).toLowerCase().includes(query_lower)
-        );
-      });
-    });
-    
-    return results;
-  } catch (error) {
-    Logger.log('Error in searchData: ' + error);
-    return {};
-  }
-}
-
-// Get stats for dashboard
 function getDashboardStats() {
   try {
     const sheetNames = ['Business Documents', 'Video Hub', 'Bookmarks', 'Quick Notes'];
@@ -198,11 +99,169 @@ function getDashboardStats() {
     return stats;
   } catch (error) {
     Logger.log('Error in getDashboardStats: ' + error);
-    return {};
+    return {
+      'Business Documents': { total: 0, data: [] },
+      'Video Hub': { total: 0, data: [] },
+      'Bookmarks': { total: 0, data: [] },
+      'Quick Notes': { total: 0, data: [] }
+    };
   }
 }
 
-// Export data as JSON
+// ============================================
+// CREATE OPERATION
+// ============================================
+
+function addEntry(sheetName, data) {
+  try {
+    const sheet = SPREADSHEET.getSheetByName(sheetName);
+    if (!sheet) {
+      return { success: false, message: 'Sheet not found' };
+    }
+    
+    const id = Utilities.getUuid();
+    const timestamp = new Date().toLocaleString('en-IN');
+    
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let newRow = [];
+    
+    headers.forEach(header => {
+      if (header === 'ID') {
+        newRow.push(id);
+      } else if (header === 'Timestamp') {
+        newRow.push(timestamp);
+      } else if (header === 'Date Added' && !data[header]) {
+        newRow.push(new Date().toLocaleDateString('en-IN'));
+      } else {
+        newRow.push(data[header] || '');
+      }
+    });
+    
+    sheet.appendRow(newRow);
+    SpreadsheetApp.flush();
+    
+    return { success: true, message: 'Entry added successfully', id: id };
+  } catch (error) {
+    Logger.log('Error in addEntry: ' + error);
+    return { success: false, message: 'Error adding entry: ' + error.toString() };
+  }
+}
+
+// ============================================
+// UPDATE OPERATION
+// ============================================
+
+function updateEntry(sheetName, id, data) {
+  try {
+    const sheet = SPREADSHEET.getSheetByName(sheetName);
+    if (!sheet) {
+      return { success: false, message: 'Sheet not found' };
+    }
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No data found' };
+    }
+    
+    const dataRange = sheet.getRange(1, 1, lastRow, sheet.getLastColumn());
+    const values = dataRange.getValues();
+    const headers = values[0];
+    
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === id) {
+        const updates = [];
+        headers.forEach((header, index) => {
+          if (header === 'Timestamp') {
+            updates[index] = new Date().toLocaleString('en-IN');
+          } else if (data.hasOwnProperty(header)) {
+            updates[index] = data[header];
+          } else {
+            updates[index] = values[i][index];
+          }
+        });
+        
+        sheet.getRange(i + 1, 1, 1, headers.length).setValues([updates]);
+        SpreadsheetApp.flush();
+        return { success: true, message: 'Entry updated successfully' };
+      }
+    }
+    
+    return { success: false, message: 'Entry not found' };
+  } catch (error) {
+    Logger.log('Error in updateEntry: ' + error);
+    return { success: false, message: 'Error updating entry: ' + error.toString() };
+  }
+}
+
+// ============================================
+// DELETE OPERATION
+// ============================================
+
+function deleteEntry(sheetName, id) {
+  try {
+    const sheet = SPREADSHEET.getSheetByName(sheetName);
+    if (!sheet) {
+      return { success: false, message: 'Sheet not found' };
+    }
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No data found' };
+    }
+    
+    const dataRange = sheet.getRange(1, 1, lastRow, sheet.getLastColumn());
+    const values = dataRange.getValues();
+    
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === id) {
+        sheet.deleteRow(i + 1);
+        SpreadsheetApp.flush();
+        return { success: true, message: 'Entry deleted successfully' };
+      }
+    }
+    
+    return { success: false, message: 'Entry not found' };
+  } catch (error) {
+    Logger.log('Error in deleteEntry: ' + error);
+    return { success: false, message: 'Error deleting entry: ' + error.toString() };
+  }
+}
+
+// ============================================
+// SEARCH OPERATION
+// ============================================
+
+function searchData(query) {
+  try {
+    const query_lower = query.toLowerCase().trim();
+    const sheetNames = ['Business Documents', 'Video Hub', 'Bookmarks', 'Quick Notes'];
+    const results = {};
+    
+    sheetNames.forEach(sheetName => {
+      const data = getSheetData(sheetName);
+      results[sheetName] = data.filter(row => {
+        return Object.values(row).some(val => 
+          String(val).toLowerCase().includes(query_lower)
+        );
+      });
+    });
+    
+    return results;
+  } catch (error) {
+    Logger.log('Error in searchData: ' + error);
+    return {
+      'Business Documents': [],
+      'Video Hub': [],
+      'Bookmarks': [],
+      'Quick Notes': []
+    };
+  }
+}
+
+// ============================================
+// EXPORT OPERATION
+// ============================================
+
 function exportData() {
   try {
     const sheetNames = ['Business Documents', 'Video Hub', 'Bookmarks', 'Quick Notes'];
